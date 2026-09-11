@@ -13,6 +13,7 @@ class AddDeviceFSM(StatesGroup):
     choose_type = State()
     waiting_owner = State()
     waiting_device_name = State()
+    waiting_note = State()
 
 
 DEVICE_LABELS = {
@@ -45,7 +46,7 @@ async def add_device_type(callback: CallbackQuery, state: FSMContext):
     await state.set_state(AddDeviceFSM.waiting_owner)
     await callback.message.edit_text(
         f"{DEVICE_LABELS[device_type]} tanlandi.\n\n"
-        "✍️ Kim nomiga yozamiz? (F.I.SH. kiriting):"
+        "✍️ Kim nomiga yozamiz? (F.I.SH. kiriting; agar 2 ta odamga bitta qurilma berilgan bo'lsa nomlarni vergul bilan yozing):"
     )
     await callback.answer()
 
@@ -61,10 +62,20 @@ async def add_device_owner(message: Message, state: FSMContext):
 
 @router.message(AddDeviceFSM.waiting_device_name)
 async def add_device_name(message: Message, state: FSMContext):
+    await state.update_data(device_name=message.text.strip())
+    await state.set_state(AddDeviceFSM.waiting_note)
+    await message.answer(
+        "📝 Izoh kiriting (ixtiyoriy). Masalan: bir telefon yoki kompyuter 2 ta odamga berilgan bo'lsa, bu yerga yozib qoldiring:"
+    )
+
+
+@router.message(AddDeviceFSM.waiting_note)
+async def add_device_note(message: Message, state: FSMContext):
     data = await state.get_data()
     device_type = data["device_type"]
     owner_name = data["owner_name"]
-    device_name = message.text.strip()
+    device_name = data["device_name"]
+    note = message.text.strip() if message.text else None
 
     model_map = {
         "phone": Phone,
@@ -73,7 +84,11 @@ async def add_device_name(message: Message, state: FSMContext):
     }
 
     async with async_session_maker() as session:
-        obj = model_map[device_type](owner_name=owner_name, device_name=device_name)
+        obj = model_map[device_type](
+            owner_name=owner_name,
+            device_name=device_name,
+            note=note,
+        )
         session.add(obj)
         await session.commit()
 
@@ -82,6 +97,7 @@ async def add_device_name(message: Message, state: FSMContext):
         f"✅ Muvaffaqiyatli qo'shildi!\n\n"
         f"Turi: {DEVICE_LABELS[device_type]}\n"
         f"Egasi: {owner_name}\n"
-        f"Qurilma: {device_name}",
+        f"Qurilma: {device_name}\n"
+        f"Izoh: {note or '—'}",
         reply_markup=main_menu_kb(),
     )
